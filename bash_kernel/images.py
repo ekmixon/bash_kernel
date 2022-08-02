@@ -21,16 +21,10 @@ def display_data_for_image(filename):
 
     image_type = imghdr.what(None, image)
     if image_type is None:
-        raise ValueError("Not a valid image: %s" % image)
+        raise ValueError(f"Not a valid image: {image}")
 
     image_data = base64.b64encode(image).decode('ascii')
-    content = {
-        'data': {
-            'image/' + image_type: image_data
-        },
-        'metadata': {}
-    }
-    return content
+    return {'data': {f'image/{image_type}': image_data}, 'metadata': {}}
 
 
 def extract_image_filenames(output):

@@ -33,7 +33,7 @@ class IREPLWrapper(replwrap.REPLWrapper):
                                       prompt_change, extra_init_cmd=extra_init_cmd)
 
     def _expect_prompt(self, timeout=-1):
-        if timeout == None:
+        if timeout is None:
             # "None" means we are executing code from a Jupyter cell by way of the run_command
             # in the do_execute() code below, so do incremental output.
             while True:
@@ -109,22 +109,23 @@ class BashKernel(Kernel):
         self.bashwrapper.run_command(image_setup_cmd)
 
     def process_output(self, output):
-        if not self.silent:
-            image_filenames, output = extract_image_filenames(output)
+        if self.silent:
+            return
+        image_filenames, output = extract_image_filenames(output)
 
-            # Send standard output
-            stream_content = {'name': 'stdout', 'text': output}
-            self.send_response(self.iopub_socket, 'stream', stream_content)
+        # Send standard output
+        stream_content = {'name': 'stdout', 'text': output}
+        self.send_response(self.iopub_socket, 'stream', stream_content)
 
-            # Send images, if any
-            for filename in image_filenames:
-                try:
-                    data = display_data_for_image(filename)
-                except ValueError as e:
-                    message = {'name': 'stdout', 'text': str(e)}
-                    self.send_response(self.iopub_socket, 'stream', message)
-                else:
-                    self.send_response(self.iopub_socket, 'display_data', data)
+        # Send images, if any
+        for filename in image_filenames:
+            try:
+                data = display_data_for_image(filename)
+            except ValueError as e:
+                message = {'name': 'stdout', 'text': str(e)}
+                self.send_response(self.iopub_socket, 'stream', message)
+            else:
+                self.send_response(self.iopub_socket, 'display_data', data)
 
 
     def do_execute(self, code, silent, store_history=True,
@@ -148,7 +149,7 @@ class BashKernel(Kernel):
             output = self.bashwrapper.child.before
             self.process_output(output)
         except EOF:
-            output = self.bashwrapper.child.before + 'Restarting Bash'
+            output = f'{self.bashwrapper.child.before}Restarting Bash'
             self._start_bash()
             self.process_output(output)
 
@@ -160,26 +161,30 @@ class BashKernel(Kernel):
         except Exception:
             exitcode = 1
 
-        if exitcode:
-            error_content = {
-                'ename': '',
-                'evalue': str(exitcode),
-                'traceback': []
-            }
-            self.send_response(self.iopub_socket, 'error', error_content)
-
-            error_content['execution_count'] = self.execution_count
-            error_content['status'] = 'error'
-            return error_content
-        else:
+        if not exitcode:
             return {'status': 'ok', 'execution_count': self.execution_count,
                     'payload': [], 'user_expressions': {}}
+        error_content = {
+            'ename': '',
+            'evalue': str(exitcode),
+            'traceback': []
+        }
+        self.send_response(self.iopub_socket, 'error', error_content)
+
+        error_content['execution_count'] = self.execution_count
+        error_content['status'] = 'error'
+        return error_content
 
     def do_complete(self, code, cursor_pos):
         code = code[:cursor_pos]
-        default = {'matches': [], 'cursor_start': 0,
-                   'cursor_end': cursor_pos, 'metadata': dict(),
-                   'status': 'ok'}
+        default = {
+            'matches': [],
+            'cursor_start': 0,
+            'cursor_end': cursor_pos,
+            'metadata': {},
+            'status': 'ok',
+        }
+
 
         if not code or code[-1] == ' ':
             return default
@@ -194,14 +199,14 @@ class BashKernel(Kernel):
 
         if token[0] == '$':
             # complete variables
-            cmd = 'compgen -A arrayvar -A export -A variable %s' % token[1:] # strip leading $
+            cmd = f'compgen -A arrayvar -A export -A variable {token[1:]}'
             output = self.bashwrapper.run_command(cmd).rstrip()
             completions = set(output.split())
             # append matches including leading $
-            matches.extend(['$'+c for c in completions])
+            matches.extend([f'${c}' for c in completions])
         else:
             # complete functions and builtins
-            cmd = 'compgen -cdfa %s' % token
+            cmd = f'compgen -cdfa {token}'
             output = self.bashwrapper.run_command(cmd).rstrip()
             matches.extend(output.split())
 
@@ -209,6 +214,10 @@ class BashKernel(Kernel):
             return default
         matches = [m for m in matches if m.startswith(token)]
 
-        return {'matches': sorted(matches), 'cursor_start': start,
-                'cursor_end': cursor_pos, 'metadata': dict(),
-                'status': 'ok'}
+        return {
+            'matches': sorted(matches),
+            'cursor_start': start,
+            'cursor_end': cursor_pos,
+            'metadata': {},
+            'status': 'ok',
+        }
